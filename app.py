@@ -5,171 +5,169 @@ from pypdf import PdfReader
 import pytesseract
 import streamlit as st
 import pandas as pd
+from PIL import Image
 
 st.set_page_config(page_title="Extrator de Nomes para Planilha", layout="wide")
 st.title("📋 Extrator de Nomes para Planilha Excel")
 st.write(
-    "Envie um PDF consolidado (mesmo que seja imagem/scaneado). "
-    "O sistema extrairá **todos os nomes** de cada página e gerará uma planilha Excel."
+    "Envie um PDF consolidado **ou imagens dos cartões**. "
+    "O sistema extrairá **todos os nomes** e gerará uma planilha Excel."
 )
 
-# Estado da sessão
 if "excel_buffer" not in st.session_state:
     st.session_state.excel_buffer = None
 if "df_resultado" not in st.session_state:
     st.session_state.df_resultado = None
 
 
-def extrair_texto(page_plumber):
-    """Tenta extrair texto nativo; se falhar ou for muito curto, usa OCR."""
-    texto = page_plumber.extract_text() or ""
-    texto_limpo = texto.strip().replace("\n", "").replace(" ", "")
-
-    # Fallback OCR apenas se a página parecer escaneada/imagem
-    if len(texto.strip()) < 20 or len(texto_limpo) < 10:
-        try:
-            img = page_plumber.to_image(resolution=300).original
-            try:
-                texto_ocr = pytesseract.image_to_string(img, lang="por")
-            except Exception:
-                texto_ocr = pytesseract.image_to_string(img, lang="eng")
-            if len(texto_ocr.strip()) > len(texto.strip()):
-                texto = texto_ocr
-        except Exception:
-            pass
-    return texto
+def limpar_texto_corrompido(texto):
+    """Remove caracteres triplicados do pdfplumber e normaliza."""
+    if not texto:
+        return ""
+    # Reduz 3+ repetições do mesmo caractere para 1
+    texto = re.sub(r'(.)\\1{2,}', r'\\1', texto)
+    texto = re.sub(r'\\n+', ' ', texto)
+    texto = re.sub(r'\\s+', ' ', texto)
+    return texto.strip()
 
 
 def extrair_nomes(texto):
-    """Retorna uma lista com todos os nomes encontrados no texto da página."""
+    """Retorna TODOS os nomes encontrados no texto."""
     if not texto:
         return []
 
-    # Normaliza espaços e quebras de linha
-    texto = re.sub(r"\s+", " ", texto)
+    texto = limpar_texto_corrompido(texto)
     nomes_encontrados = []
 
-    # ================================================================
-    # PADRÃO 1 — Etiquetas de bloqueio / crachás / fichas
-    # "NOME  GABRIEL DA COSTA ALVES  FUNÇÃO ..."
-    # ================================================================
-    padrao1 = (
-        r"NOME\s+([A-Z][A-Z\s]+?)"
-        r"(?=\s+FUN[ÇC][ÃA]O|\s+TEL[\s:]|\s+N[°º]|\s+CRACH[ÁA]|\s+[ÁA]REA|"
-        r"\s+ESTOU|\s+PERIGO|\s+NÃO\s+LI|\s+ESTA\s+ETIQUETA|"
-        r"\s+SÓ\s+PODEM|\s+REMOVIDOS|\s+PESSOA|\s+INDICADO|\s+VERSO|$)"
+    # PADRÃO PRINCIPAL — Cartões de bloqueio
+    # NÃO inclui "NOME" como delimitador! Isso evita parar em campos vazios.
+    delimitadores = (
+        r'FUN[ÇC][ÃA]O|FUNCAO|TEL[:\\s]|N[°º]?\\s*CRACH[ÁA]|CRACH[ÁA]'
+        r'|[ÁA]REA|AREA|ESTOU|PERIGO|N[ÃA]O\\s*LIGUE|ESTA\\s*ETIQUETA'
+        r'|S[ÓO]\\s*PODEM|REMOVIDOS|PESSOA|INDICADO|VERSO|$'
     )
-    for match in re.finditer(padrao1, texto, re.IGNORECASE):
-        nome = match.group(1).strip()
-        # Corte de segurança
-        for stop in ["FUNÇÃO", "FUNCAO", "TEL", "CRACHÁ", "CRACHA",
-                     "ÁREA", "AREA", "ESTOU", "PERIGO", "NÃO", "NAO",
-                     "LIGUE", "ESTA", "ETIQUETA", "SÓ", "PODEM", "REMOVIDOS",
-                     "PESSOA", "INDICADO", "VERSO"]:
-            nome = nome.split(stop)[0].strip()
-        if 5 < len(nome) < 60 and len(nome.split()) >= 2:
-            nomes_encontrados.append(nome)
 
-    # ================================================================
-    # PADRÃO 2 — Documentos de texto corrido (Termos, ASO, Contratos...)
-    # "Eu, ALLISON CECILIO DE MATOS, CPF..."
-    # ================================================================
-    padrao2 = (
-        r"Eu,\s*([A-Z][A-Z\s]+?)"
-        r"(?=,\s*CPF|,\s*declaro|,\s*portador|,\s*autorizo|\s+colaborador|$)"
+    padrao = re.compile(
+        rf'NOME\\s+([A-ZÀ-ÚÁÂÃÉÊÍÓÔÕÚÇ][A-ZÀ-ÚÁÂÃÉÊÍÓÔÕÚÇ\\s]+?)'
+        rf'(?=\\s*(?:{delimitadores}))',
+        re.IGNORECASE
     )
-    for match in re.finditer(padrao2, texto, re.IGNORECASE):
-        nome = match.group(1).strip()
-        for stop in ["COLABORADOR", "DECLARO", "TERMO", "EMPRESA", "INSTRUÇÕES", "CPF", "RG"]:
-            nome = nome.split(stop)[0].strip()
-        if 5 < len(nome) < 60 and len(nome.split()) >= 2:
-            nomes_encontrados.append(nome)
 
-    # ================================================================
-    # PADRÃO 3 — Ficha Registro: "NOME FUNCIONÁRIO  FULANO DE TAL"
-    # ================================================================
-    padrao3 = r"NOME\s*FUNCION[ÁA]RIO\s+([A-Z][A-Z\s]+?)(?=\s+MATR[ÍI]CULA|\s+REGISTRO|$)"
-    for match in re.finditer(padrao3, texto, re.IGNORECASE):
+    for match in padrao.finditer(texto):
         nome = match.group(1).strip()
-        if 5 < len(nome) < 60 and len(nome.split()) >= 2:
-            nomes_encontrados.append(nome)
+        nome = re.sub(r'\\s+', ' ', nome)
+        # Filtros
+        if 5 < len(nome) < 70 and len(nome.split()) >= 2:
+            bloqueio = {
+                'FUNCAO', 'FUNÇÃO', 'TEL', 'CRACHA', 'CRACHÁ',
+                'AREA', 'ÁREA', 'ESTOU', 'PERIGO', 'LIGUE',
+                'ETIQUETA', 'PODEM', 'REMOVIDOS', 'PESSOA', 'INDICADO', 'VERSO'
+            }
+            if not any(p in nome.upper() for p in bloqueio):
+                nomes_encontrados.append(nome)
 
-    # ================================================================
-    # PADRÃO 4 — ASO / Contratos: "Nome: FULANO DE TAL  CPF: ..."
-    # ================================================================
-    padrao4 = (
-        r"Nome\s*:\s*([A-Z][A-Z\s]+?)"
-        r"(?=\s+CPF|\s+Cargo|\s+Fun[çc][ãa]o|\s+Admiss[ãa]o|\s+Idade|$)"
-    )
-    for match in re.finditer(padrao4, texto, re.IGNORECASE):
-        nome = match.group(1).strip()
-        if 5 < len(nome) < 60 and len(nome.split()) >= 2:
-            nomes_encontrados.append(nome)
-
-    # ================================================================
-    # PADRÃO 5 — Ficha EPI: "COLABORADOR: FULANO DE TAL"
-    # ================================================================
-    padrao5 = r"COLABORADOR[:\s]+([A-Z][A-Z\s]+?)(?=\s+CHAPA|\s+Fun[çc][ãa]o|$)"
-    for match in re.finditer(padrao5, texto, re.IGNORECASE):
-        nome = match.group(1).strip()
-        if 5 < len(nome) < 60 and len(nome.split()) >= 2:
-            nomes_encontrados.append(nome)
-
-    # Remove duplicatas mantendo a ordem de aparição
+    # Remove duplicatas mantendo ordem
     return list(dict.fromkeys(nomes_encontrados))
+
+
+def processar_pdf(arquivo):
+    """Processa PDF com fallback OCR."""
+    reader = PdfReader(arquivo)
+    total = len(reader.pages)
+    dados = []
+
+    barra = st.progress(0)
+    status = st.empty()
+
+    with pdfplumber.open(arquivo) as pdf_plumber:
+        for idx in range(total):
+            page = pdf_plumber.pages[idx]
+            
+            # 1. Tenta texto nativo
+            texto = page.extract_text() or ""
+            nomes = extrair_nomes(texto)
+
+            # 2. Se não achou nada, tenta OCR (página é imagem)
+            if not nomes:
+                try:
+                    img = page.to_image(resolution=200).original
+                    texto_ocr = pytesseract.image_to_string(img, lang="por")
+                    nomes = extrair_nomes(texto_ocr)
+                except Exception:
+                    pass  # Se OCR falhar, ignora
+
+            for nome in nomes:
+                dados.append({"PÁGINA": idx + 1, "NOME": nome})
+
+            status.text(
+                f"Processando página {idx + 1}/{total} — "
+                f"{len(nomes)} nome(s) encontrado(s) | Total: {len(dados)}"
+            )
+            barra.progress((idx + 1) / total)
+
+    status.empty()
+    return dados
+
+
+def processar_imagens(arquivos_imagem):
+    """Processa imagens individuais diretamente."""
+    dados = []
+    for idx, img_file in enumerate(arquivos_imagem):
+        img = Image.open(img_file)
+        texto_ocr = pytesseract.image_to_string(img, lang="por")
+        nomes = extrair_nomes(texto_ocr)
+        for nome in nomes:
+            dados.append({"ARQUIVO": img_file.name, "NOME": nome})
+    return dados
 
 
 # =============================================================================
 # INTERFACE
 # =============================================================================
-arquivo = st.file_uploader("Selecione o PDF consolidado", type=["pdf"])
+st.subheader("Opção 1: PDF Consolidado")
+arquivo_pdf = st.file_uploader("Selecione o PDF", type=["pdf"], key="pdf")
 
-if arquivo is not None:
-    if st.button("🔍 Extrair Nomes e Gerar Planilha", type="primary"):
-        reader = PdfReader(arquivo)
-        total = len(reader.pages)
+st.subheader("Opção 2: Imagens dos Cartões")
+arquivos_img = st.file_uploader(
+    "Selecione as imagens (mais confiável para cartões escaneados)",
+    type=["jpg", "jpeg", "png"],
+    accept_multiple_files=True,
+    key="imgs"
+)
 
-        barra = st.progress(0)
-        status = st.empty()
+col1, col2 = st.columns(2)
 
-        dados = []
-
-        with pdfplumber.open(arquivo) as pdf_plumber:
-            for idx in range(total):
-                page = pdf_plumber.pages[idx]
-                texto = extrair_texto(page)
-                nomes = extrair_nomes(texto)
-
-                status.text(
-                    f"Processando página {idx + 1}/{total} — "
-                    f"{len(nomes)} nome(s) encontrado(s)"
-                )
-
-                for nome in nomes:
-                    dados.append({"PÁGINA": idx + 1, "NOME": nome})
-
-                barra.progress((idx + 1) / total)
-
+with col1:
+    if arquivo_pdf and st.button("🔍 Extrair do PDF", type="primary"):
+        dados = processar_pdf(arquivo_pdf)
         if dados:
             df = pd.DataFrame(dados)
             st.session_state.df_resultado = df
-
-            # Gera Excel em memória
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
                 df.to_excel(writer, index=False, sheet_name="Nomes")
             st.session_state.excel_buffer = excel_buffer.getvalue()
-
-            st.success(f"✅ {len(dados)} nome(s) extraído(s) com sucesso!")
+            st.success(f"✅ {len(dados)} nome(s) extraído(s) do PDF!")
         else:
-            st.warning("Nenhum nome encontrado no documento.")
-            st.session_state.excel_buffer = None
-            st.session_state.df_resultado = None
+            st.warning("Nenhum nome encontrado no PDF.")
+            st.info("💡 Dica: Se o PDF for escaneado, instale o Tesseract com idioma português.")
 
-        status.empty()
+with col2:
+    if arquivos_img and st.button("🔍 Extrair das Imagens", type="primary"):
+        dados = processar_imagens(arquivos_img)
+        if dados:
+            df = pd.DataFrame(dados)
+            st.session_state.df_resultado = df
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Nomes")
+            st.session_state.excel_buffer = excel_buffer.getvalue()
+            st.success(f"✅ {len(dados)} nome(s) extraído(s) das imagens!")
+        else:
+            st.warning("Nenhum nome encontrado nas imagens.")
 
 # =============================================================================
-# RESULTADO (persiste após recarregar)
+# RESULTADO
 # =============================================================================
 if st.session_state.df_resultado is not None:
     st.subheader("📊 Pré-visualização")
