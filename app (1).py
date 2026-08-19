@@ -299,16 +299,18 @@ def gerar_excel(data_inicio, data_fim):
     resumo_produtos = buscar_resumo_produtos(data_inicio, data_fim)
 
     if not vendas.empty:
+        # Agrupamento direto renomeando as agregações para evitar MultiIndex
         resumo_pagamentos = (
-            vendas.groupby("forma_pagamento", as_index=False)["total"]
-            .agg(["count", "sum"])
-            .reset_index()
+            vendas.groupby("forma_pagamento", as_index=False)
+            .agg(
+                **{
+                    "Forma de Pagamento": ("forma_pagamento", "first"),
+                    "Quantidade de Vendas": ("id", "count"),
+                    "Faturamento": ("total", "sum"),
+                }
+            )
+            .drop(columns=["forma_pagamento"])
         )
-        resumo_pagamentos.columns = [
-            "Forma de Pagamento",
-            "Quantidade de Vendas",
-            "Faturamento",
-        ]
     else:
         resumo_pagamentos = pd.DataFrame(
             columns=[
