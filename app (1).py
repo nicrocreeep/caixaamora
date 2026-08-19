@@ -38,10 +38,17 @@ def inicializar_banco():
             nome TEXT NOT NULL UNIQUE,
             categoria TEXT,
             preco REAL NOT NULL DEFAULT 0,
+            unidade TEXT NOT NULL DEFAULT 'KG',
             ativo INTEGER NOT NULL DEFAULT 1,
             criado_em TEXT NOT NULL
         )
     """)
+
+    # Garantir compatibilidade com bancos antigos adicionando a coluna 'unidade' se ela não existir
+    cursor.execute("PRAGMA table_info(produtos)")
+    colunas = [coluna[1] for coluna in cursor.fetchall()]
+    if "unidade" not in colunas:
+        cursor.execute("ALTER TABLE produtos ADD COLUMN unidade TEXT NOT NULL DEFAULT 'KG'")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS vendas (
@@ -91,14 +98,14 @@ def buscar_produtos(apenas_ativos=True):
 
     if apenas_ativos:
         query = """
-            SELECT id, nome, categoria, preco, ativo
+            SELECT id, nome, categoria, preco, unidade, ativo
             FROM produtos
             WHERE ativo = 1
             ORDER BY nome
         """
     else:
         query = """
-            SELECT id, nome, categoria, preco, ativo
+            SELECT id, nome, categoria, preco, unidade, ativo
             FROM produtos
             ORDER BY nome
         """
@@ -108,20 +115,21 @@ def buscar_produtos(apenas_ativos=True):
     return df
 
 
-def cadastrar_produto(nome, categoria, preco):
+def cadastrar_produto(nome, categoria, preco, unidade):
     conn = conectar()
 
     try:
         conn.execute(
             """
             INSERT INTO produtos
-                (nome, categoria, preco, ativo, criado_em)
-            VALUES (?, ?, ?, 1, ?)
+                (nome, categoria, preco, unidade, ativo, criado_em)
+            VALUES (?, ?, ?, ?, 1, ?)
             """,
             (
                 nome.strip(),
                 categoria.strip(),
                 float(preco),
+                unidade,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
         )
@@ -137,11 +145,11 @@ def cadastrar_produto(nome, categoria, preco):
     return sucesso, mensagem
 
 
-def atualizar_preco_produto(produto_id, novo_preco):
+def atualizar_preco_produto(produto_id, novo_preco, nova_unidade):
     conn = conectar()
     conn.execute(
-        "UPDATE produtos SET preco = ? WHERE id = ?",
-        (float(novo_preco), int(produto_id)),
+        "UPDATE produtos SET preco = ?, unidade = ? WHERE id = ?",
+        (float(novo_preco), nova_unidade, int(produto_id)),
     )
     conn.commit()
     conn.close()
@@ -299,7 +307,6 @@ def gerar_excel(data_inicio, data_fim):
     resumo_produtos = buscar_resumo_produtos(data_inicio, data_fim)
 
     if not vendas.empty:
-        # Agrupamento direto renomeando as agregações para evitar MultiIndex
         resumo_pagamentos = (
             vendas.groupby("forma_pagamento", as_index=False)
             .agg(
@@ -401,7 +408,7 @@ with aba_caixa:
         )
     else:
         mapa_produtos = {
-            f"{row['nome']} — {moeda(row['preco'])}": row
+            f"{row['nome']} — {moeda(row['preco'])} / {row['unidade']}": row
             for _, row in produtos.iterrows()
         }
 
@@ -414,18 +421,20 @@ with aba_caixa:
             )
 
         produto_row = mapa_produtos[produto_selecionado]
+        e_kg = produto_row["unidade"] == "KG"
 
         with col2:
             quantidade = st.number_input(
-                "Quantidade",
-                min_value=0.01,
-                value=1.0,
-                step=1.0,
+                f"Qtd ({produto_row['unidade']})",
+                min_value=0.001 if e_kg else 1.0,
+                value=0.500 if e_kg else 1.0,
+                step=0.050 if e_kg else 1.0,
+                format="%.3f" if e_kg else "%.0f",
             )
 
         with col3:
             preco_unitario = st.number_input(
-                "Preço unitário",
+                f"Preço ({produto_row['unidade']})",
                 min_value=0.0,
                 value=float(produto_row["preco"]),
                 step=0.50,
@@ -440,7 +449,7 @@ with aba_caixa:
             st.session_state.carrinho.append(
                 {
                     "produto_id": int(produto_row["id"]),
-                    "produto_nome": produto_row["nome"],
+                    "produto_nome": f"{produto_row['nome']} ({produto_row['unidade']})",
                     "quantidade": float(quantidade),
                     "preco_unitario": float(preco_unitario),
                     "subtotal": subtotal,
@@ -468,7 +477,7 @@ with aba_caixa:
                 columns={
                     "produto_nome": "Produto",
                     "quantidade": "Qtd.",
-                    "preco_unitario": "Preço",
+                    "preco_unitario": "Preço Unit.",
                     "subtotal": "Subtotal",
                 }
             )
@@ -543,12 +552,21 @@ with aba_produtos:
                 placeholder="Ex.: Pães",
             )
 
-        preco = st.number_input(
-            "Preço de venda",
-            min_value=0.0,
-            value=0.0,
-            step=0.50,
-        )
+        col_preco, col_unidade = st.columns(2)
+
+        with col_preco:
+            preco = st.number_input(
+                "Preço de venda",
+                min_value=0.0,
+                value=0.0,
+                step=0.50,
+            )
+
+        with col_unidade:
+            unidade = st.selectbox(
+                "Unidade de medida",
+                options=["KG", "Und"],
+            )
 
         salvar_produto = st.form_submit_button(
             "💾 Cadastrar produto",
@@ -565,6 +583,7 @@ with aba_produtos:
                 nome_produto,
                 categoria,
                 preco,
+                unidade,
             )
 
             if sucesso:
@@ -586,7 +605,9 @@ with aba_produtos:
         exibicao["Situação"] = exibicao["ativo"].map(
             {1: "Ativo", 0: "Inativo"}
         )
-        exibicao["Preço"] = exibicao["preco"].apply(moeda)
+        exibicao["Preço"] = exibicao.apply(
+            lambda r: f"{moeda(r['preco'])} / {r['unidade']}", axis=1
+        )
 
         exibicao = exibicao[
             ["id", "nome", "categoria", "Preço", "Situação"]
@@ -623,25 +644,36 @@ with aba_produtos:
 
         row_editar = mapa_ids[produto_editar]
 
-        novo_preco = st.number_input(
-            "Novo preço",
-            min_value=0.0,
-            value=float(row_editar["preco"]),
-            step=0.50,
-        )
+        col1, col2 = st.columns(2)
+
+        with col1:
+            novo_preco = st.number_input(
+                "Novo preço",
+                min_value=0.0,
+                value=float(row_editar["preco"]),
+                step=0.50,
+            )
+
+        with col2:
+            nova_unidade = st.selectbox(
+                "Unidade de medida",
+                options=["KG", "Und"],
+                index=0 if row_editar["unidade"] == "KG" else 1,
+            )
 
         col1, col2 = st.columns(2)
 
         with col1:
             if st.button(
-                "💾 Atualizar preço",
+                "💾 Atualizar dados",
                 use_container_width=True,
             ):
                 atualizar_preco_produto(
                     row_editar["id"],
                     novo_preco,
+                    nova_unidade,
                 )
-                st.success("Preço atualizado.")
+                st.success("Produto atualizado.")
                 st.rerun()
 
         with col2:
