@@ -219,7 +219,22 @@ def registrar_venda(carrinho, forma_pagamento):
 
     finally:
         conn.close()
-
+        
+def excluir_venda(venda_id):
+    conn = conectar()
+    try:
+        cursor = conn.cursor()
+        # Remove primeiro os itens vinculados à venda
+        cursor.execute("DELETE FROM itens_venda WHERE venda_id = ?", (int(venda_id),))
+        # Remove a venda
+        cursor.execute("DELETE FROM vendas WHERE id = ?", (int(venda_id),))
+        conn.commit()
+        return True, "Venda excluída com sucesso!"
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao excluir venda: {e}"
+    finally:
+        conn.close()
 
 def buscar_vendas(data_inicio, data_fim):
     conn = conectar()
@@ -758,6 +773,29 @@ with aba_relatorio:
                 hide_index=True,
             )
 
+            # --- SESSÃO PARA EXCLUIR VENDA ---
+            st.divider()
+            st.subheader("🗑️ Cancelar / Excluir Venda")
+
+            opcoes_vendas = {
+                f"Venda #{row['id']} - {row['data_hora']} - Total: {moeda(row['total'])}": row['id']
+                for _, row in vendas.iterrows()
+            }
+
+            venda_selecionada = st.selectbox(
+                "Selecione a venda que deseja excluir",
+                options=list(opcoes_vendas.keys())
+            )
+
+            if st.button("🚨 Cancelar esta venda", type="primary"):
+                venda_id = opcoes_vendas[venda_selecionada]
+                sucesso, msg = excluir_venda(venda_id)
+                if sucesso:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
         st.divider()
 
         resumo_pagamentos = (
@@ -785,6 +823,34 @@ with aba_relatorio:
 
             st.dataframe(
                 resumo_pagamentos,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.divider()
+
+        resumo_produtos = buscar_resumo_produtos(
+            data_inicio,
+            data_fim,
+        )
+
+        if not resumo_produtos.empty:
+            st.subheader("🥐 Produtos mais vendidos")
+
+            resumo_produtos["faturamento"] = (
+                resumo_produtos["faturamento"].apply(moeda)
+            )
+
+            resumo_produtos = resumo_produtos.rename(
+                columns={
+                    "produto": "Produto",
+                    "quantidade_vendida": "Quantidade",
+                    "faturamento": "Faturamento",
+                }
+            )
+
+            st.dataframe(
+                resumo_produtos,
                 use_container_width=True,
                 hide_index=True,
             )
