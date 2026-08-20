@@ -44,7 +44,7 @@ def inicializar_banco():
         )
     """)
 
-    # Garantir compatibilidade com bancos antigos adicionando a coluna 'unidade' se ela não existir
+    # Garantir compatibilidade com bancos antigos adicionando a coluna 'unidade' se não existir
     cursor.execute("PRAGMA table_info(produtos)")
     colunas = [coluna[1] for coluna in cursor.fetchall()]
     if "unidade" not in colunas:
@@ -77,7 +77,105 @@ def inicializar_banco():
     conn.close()
 
 
+def popular_produtos_iniciais():
+    conn = conectar()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM produtos")
+    total = cursor.fetchone()[0]
+
+    if total == 0:
+        produtos_iniciais = [
+            ("Bolo de Abacaxi", "Padaria / Confeitaria", 59.99, "KG"),
+            ("Bolo de Bombom", "Padaria / Confeitaria", 79.99, "KG"),
+            ("Bolo de Cenoura", "Padaria / Confeitaria", 40.0, "KG"),
+            ("Bolo de Cenoura com Chocolate", "Padaria / Confeitaria", 39.0, "KG"),
+            ("Bolo de Chocolate com Cobertura", "Padaria / Confeitaria", 44.99, "KG"),
+            ("Bolo de Fubá", "Padaria / Confeitaria", 34.9, "KG"),
+            ("Bolo de Fubá com Goiabada", "Padaria / Confeitaria", 44.99, "KG"),
+            ("Bolo de Limão Siciliano", "Padaria / Confeitaria", 44.9, "KG"),
+            ("Bolo de Maça", "Padaria / Confeitaria", 49.0, "KG"),
+            ("Bolo de Morango", "Padaria / Confeitaria", 69.99, "KG"),
+            ("Bolo de Pamonha", "Padaria / Confeitaria", 79.0, "KG"),
+            ("Bolo de Pote", "Padaria / Confeitaria", 12.0, "Und"),
+            ("Bolo Dois Amores", "Padaria / Confeitaria", 54.9, "KG"),
+            ("Bolo Indiano", "Padaria / Confeitaria", 34.5, "KG"),
+            ("Bolo no Pote", "Padaria / Confeitaria", 8.99, "Und"),
+            ("Bolo Piscina", "Padaria / Confeitaria", 44.0, "KG"),
+            ("Bolo Red Velvet", "Padaria / Confeitaria", 69.99, "KG"),
+            ("Bolo Vulcão", "Padaria / Confeitaria", 49.0, "KG"),
+            ("Brioche Tradicional", "Padaria / Confeitaria", 32.9, "KG"),
+            ("Broa de Fubá", "Padaria / Confeitaria", 24.9, "KG"),
+            ("Broa de Milho", "Padaria / Confeitaria", 24.9, "KG"),
+            ("Broa Aerosa", "Padaria / Confeitaria", 26.9, "KG"),
+            ("Carolina Recheada", "Padaria / Confeitaria", 49.9, "KG"),
+            ("Catarina de Maçã", "Padaria / Confeitaria", 39.9, "KG"),
+            ("Catarina de Requeijão", "Padaria / Confeitaria", 42.9, "KG"),
+            ("Chineque de Creme", "Padaria / Confeitaria", 29.9, "KG"),
+            ("Chineque de Farofa", "Padaria / Confeitaria", 29.9, "KG"),
+            ("Chineque de Goiabada", "Padaria / Confeitaria", 29.9, "KG"),
+            ("Chineque de Banana com Canela", "Padaria / Confeitaria", 32.9, "KG"),
+            ("Coxinha de Frango", "Padaria / Confeitaria", 6.5, "Und"),
+            ("Coxinha de Frango com Catupiry", "Padaria / Confeitaria", 7.5, "Und"),
+            ("Croissant de Presunto e Queijo", "Padaria / Confeitaria", 8.5, "Und"),
+            ("Croissant de Chocolate", "Padaria / Confeitaria", 9.0, "Und"),
+            ("Empada de Frango", "Padaria / Confeitaria", 6.0, "Und"),
+            ("Empada de Palmito", "Padaria / Confeitaria", 6.5, "Und"),
+            ("Enroladinho de Salsicha", "Padaria / Confeitaria", 5.5, "Und"),
+            ("Esfiha Aberta de Carne", "Padaria / Confeitaria", 5.0, "Und"),
+            ("Esfiha Fechada de Frango", "Padaria / Confeitaria", 6.0, "Und"),
+            ("Fatia Húngara", "Padaria / Confeitaria", 34.9, "KG"),
+            ("Folhado de Azeitona", "Padaria / Confeitaria", 38.9, "KG"),
+            ("Folhado de Frango", "Padaria / Confeitaria", 38.9, "KG"),
+            ("Folhado de Presunto e Queijo", "Padaria / Confeitaria", 38.9, "KG"),
+            ("Kibe Frito", "Padaria / Confeitaria", 6.0, "Und"),
+            ("Kibe Recheado com Catupiry", "Padaria / Confeitaria", 7.0, "Und"),
+            ("Mini Coxinha (Cento)", "Padaria / Confeitaria", 65.0, "Und"),
+            ("Mini Empada (Cento)", "Padaria / Confeitaria", 70.0, "Und"),
+            ("Mini Churros (Cento)", "Padaria / Confeitaria", 60.0, "Und"),
+            ("Misto Quente Especial", "Padaria / Confeitaria", 12.0, "Und"),
+            ("Pão Baguete Tradicional", "Padaria / Confeitaria", 18.9, "KG"),
+            ("Pão Baguete com Gergelim", "Padaria / Confeitaria", 19.9, "KG"),
+            ("Pão de Batata Recheado", "Padaria / Confeitaria", 7.0, "Und"),
+            ("Pão de Queijo Tradicional", "Padaria / Confeitaria", 39.9, "KG"),
+            ("Pão de Queijo Recheado", "Padaria / Confeitaria", 44.9, "KG"),
+            ("Pão Francês", "Padaria / Confeitaria", 14.9, "KG"),
+            ("Pão Integral 100%", "Padaria / Confeitaria", 22.9, "KG"),
+            ("Pão Sovado", "Padaria / Confeitaria", 18.9, "KG"),
+            ("Pastel de Belém", "Padaria / Confeitaria", 7.5, "Und"),
+            ("Pastel de Carne", "Padaria / Confeitaria", 7.0, "Und"),
+            ("Pastel de Queijo", "Padaria / Confeitaria", 7.0, "Und"),
+            ("Queijadinha", "Padaria / Confeitaria", 4.5, "Und"),
+            ("Quiche de Alho Poró", "Padaria / Confeitaria", 45.0, "KG"),
+            ("Quiche de Lorrainne", "Padaria / Confeitaria", 48.0, "KG"),
+            ("Rissoles de Milho com Queijo", "Padaria / Confeitaria", 6.0, "Und"),
+            ("Rocambole de Doce de Leite", "Padaria / Confeitaria", 42.9, "KG"),
+            ("Rocambole de Goiabada", "Padaria / Confeitaria", 39.9, "KG"),
+            ("Rocambole de Morango com Suspiro", "Padaria / Confeitaria", 69.99, "KG"),
+            ("Sonho", "Padaria / Confeitaria", 3.99, "Und"),
+            ("Torrada Manteiga", "Padaria / Confeitaria", 29.9, "KG"),
+            ("Torta de Banana", "Padaria / Confeitaria", 34.99, "KG"),
+            ("Torta de Limão", "Padaria / Confeitaria", 55.99, "KG"),
+            ("Torta de Morango", "Padaria / Confeitaria", 69.9, "KG"),
+            ("Torta Ricota", "Padaria / Confeitaria", 69.0, "KG"),
+            ("Tortelete de Banana", "Padaria / Confeitaria", 8.99, "Und"),
+            ("Tortelete Limão", "Padaria / Confeitaria", 8.99, "Und"),
+            ("Tortelete Morango", "Padaria / Confeitaria", 9.99, "Und")
+        ]
+
+        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for nome, cat, preco, und in produtos_iniciais:
+            cursor.execute("""
+                INSERT INTO produtos (nome, categoria, preco, unidade, ativo, criado_em)
+                VALUES (?, ?, ?, ?, 1, ?)
+            """, (nome, cat, preco, und, agora))
+
+        conn.commit()
+    conn.close()
+
+
 inicializar_banco()
+popular_produtos_iniciais()
 
 
 # =============================================================================
@@ -163,6 +261,23 @@ def desativar_produto(produto_id):
     )
     conn.commit()
     conn.close()
+
+
+def excluir_produto_definitivo(produto_id):
+    conn = conectar()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM itens_venda WHERE produto_id = ?", (int(produto_id),))
+    vendas_associadas = cursor.fetchone()[0]
+
+    if vendas_associadas > 0:
+        conn.close()
+        return False, "Este produto não pode ser excluído pois possui vendas registradas no histórico. Utilize a opção de Desativar."
+
+    cursor.execute("DELETE FROM produtos WHERE id = ?", (int(produto_id),))
+    conn.commit()
+    conn.close()
+    return True, "Produto excluído com sucesso do banco de dados!"
 
 
 def registrar_venda(carrinho, forma_pagamento):
@@ -645,7 +760,7 @@ with aba_produtos:
     ativos = buscar_produtos()
 
     if not ativos.empty:
-        st.subheader("Atualizar produto")
+        st.subheader("Gerenciar / Editar produto")
 
         mapa_ids = {
             f"{row['id']} — {row['nome']}": row
@@ -676,13 +791,10 @@ with aba_produtos:
                 index=0 if row_editar["unidade"] == "KG" else 1,
             )
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button(
-                "💾 Atualizar dados",
-                use_container_width=True,
-            ):
+            if st.button("💾 Atualizar dados", use_container_width=True):
                 atualizar_preco_produto(
                     row_editar["id"],
                     novo_preco,
@@ -692,13 +804,19 @@ with aba_produtos:
                 st.rerun()
 
         with col2:
-            if st.button(
-                "🚫 Desativar produto",
-                use_container_width=True,
-            ):
+            if st.button("🚫 Desativar produto", use_container_width=True):
                 desativar_produto(row_editar["id"])
                 st.success("Produto desativado.")
                 st.rerun()
+
+        with col3:
+            if st.button("❌ Excluir do banco", type="primary", use_container_width=True):
+                sucesso, msg = excluir_produto_definitivo(row_editar["id"])
+                if sucesso:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
 
 
 # =============================================================================
